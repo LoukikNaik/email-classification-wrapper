@@ -1,0 +1,9 @@
+credentials.json
+token.json
+.env
+classified_emails.json
+/email_cache
+/email_logs
+.venv/
+test_gemini.py
+/__pycache__/

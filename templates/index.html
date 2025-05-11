@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gmail Classifier</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        .category-badge {
+            @apply px-3 py-1 rounded-full text-sm font-medium;
+        }
+        .category-Work { @apply bg-blue-100 text-blue-800; }
+        .category-Personal { @apply bg-green-100 text-green-800; }
+        .category-Finance { @apply bg-yellow-100 text-yellow-800; }
+        .category-Promotions { @apply bg-purple-100 text-purple-800; }
+        .category-Travel { @apply bg-red-100 text-red-800; }
+        .category-Spam { @apply bg-gray-100 text-gray-800; }
+        
+        /* Toggle Switch Styles */
+        .toggle-switch {
+            @apply relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none cursor-pointer;
+            background-color: #e5e7eb;
+        }
+        .toggle-switch:hover {
+            background-color: #d1d5db;
+        }
+        .toggle-switch.enabled {
+            background-color: #2563eb;
+        }
+        .toggle-switch.enabled:hover {
+            background-color: #1d4ed8;
+        }
+        .toggle-switch.disabled {
+            background-color: #e5e7eb;
+        }
+        .toggle-switch-circle {
+            @apply inline-block h-4 w-4 transform rounded-full bg-white transition-transform;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        .toggle-switch.enabled .toggle-switch-circle {
+            transform: translateX(1.25rem);
+        }
+        .toggle-switch.disabled .toggle-switch-circle {
+            transform: translateX(0.25rem);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <header class="mb-8">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-900 mb-2">Gmail Classifier</h1>
+                    <p class="text-gray-600">Scan and categorize your recent emails</p>
+                </div>
+                <button onclick="logout()" 
+                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    Sign Out
+                </button>
+            </div>
+        </header>
+
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <div class="space-y-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-4">
+                        <input type="number" id="maxResults" value="10" min="1" max="50"
+                            class="border rounded px-3 py-2 w-24"
+                            placeholder="Number of emails">
+                        <button onclick="scanEmails()"
+                            class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors">
+                            Scan Emails
+                        </button>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <span class="text-sm font-medium text-gray-700">Show Categories</span>
+                        <button type="button" id="categoryToggle" 
+                            class="toggle-switch disabled"
+                            role="switch"
+                            aria-checked="false"
+                            onclick="toggleCategories()"
+                            title="Click to toggle category display">
+                            <span class="toggle-switch-circle"></span>
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <label for="importancePrompt" class="block text-sm font-medium text-gray-700 mb-2">
+                        What makes an email important? (e.g., "Emails about urgent work deadlines or from my boss")
+                    </label>
+                    <textarea id="importancePrompt" rows="3"
+                        class="w-full border rounded px-3 py-2"
+                        placeholder="Describe what makes an email important to you..."></textarea>
+                </div>
+            </div>
+        </div>
+
+        <div id="loading" class="hidden">
+            <div class="flex items-center justify-center space-x-2">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <span class="text-gray-600">Scanning emails...</span>
+            </div>
+        </div>
+
+        <div id="error" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4"></div>
+
+        <div id="results" class="space-y-8">
+            <!-- Important Emails Section -->
+            <div id="importantEmails" class="hidden">
+                <h2 class="text-2xl font-bold text-gray-900 mb-4">Important Emails</h2>
+                <div class="space-y-4" id="importantEmailsList"></div>
+            </div>
+
+            <!-- Non-Important Emails Section -->
+            <div id="nonImportantEmails" class="hidden">
+                <h2 class="text-2xl font-bold text-gray-900 mb-4">Other Emails</h2>
+                <div class="space-y-4" id="nonImportantEmailsList"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = window.location.origin;
+        let showCategories = false;
+
+        // Initialize toggle state from localStorage if available
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('DOM Content Loaded');
+            const savedState = localStorage.getItem('showCategories');
+            console.log('Saved state:', savedState);
+            if (savedState === 'true') {
+                showCategories = true;
+                const toggle = document.getElementById('categoryToggle');
+                toggle.classList.add('enabled');
+                toggle.classList.remove('disabled');
+                toggle.setAttribute('aria-checked', 'true');
+            }
+        });
+
+        function toggleCategories() {
+            console.log('Toggle clicked, current state:', showCategories);
+            showCategories = !showCategories;
+            const toggle = document.getElementById('categoryToggle');
+            
+            // Update toggle state
+            toggle.classList.toggle('enabled');
+            toggle.classList.toggle('disabled');
+            toggle.setAttribute('aria-checked', showCategories.toString());
+            
+            console.log('New state:', showCategories);
+            
+            // Save state to localStorage
+            localStorage.setItem('showCategories', showCategories.toString());
+            
+            // Update existing email cards
+            const allEmailCards = document.querySelectorAll('.email-card');
+            console.log('Found email cards:', allEmailCards.length);
+            allEmailCards.forEach(card => {
+                const categoryBadge = card.querySelector('.category-badge');
+                if (categoryBadge) {
+                    categoryBadge.style.display = showCategories ? 'inline-flex' : 'none';
+                }
+            });
+
+            // If we have emails displayed, rescan with new category setting
+            const importantEmails = document.getElementById('importantEmails');
+            const nonImportantEmails = document.getElementById('nonImportantEmails');
+            if (!importantEmails.classList.contains('hidden') || !nonImportantEmails.classList.contains('hidden')) {
+                console.log('Rescanning emails with new category setting');
+                scanEmails();
+            }
+        }
+
+        // Add click event listener directly
+        document.addEventListener('DOMContentLoaded', () => {
+            const toggle = document.getElementById('categoryToggle');
+            if (toggle) {
+                console.log('Adding click event listener to toggle');
+                toggle.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    console.log('Toggle clicked via event listener');
+                    toggleCategories();
+                });
+            } else {
+                console.error('Toggle element not found');
+            }
+        });
+
+        async function scanEmails() {
+            console.log('Scanning emails, showCategories:', showCategories);
+            const maxResults = document.getElementById('maxResults').value;
+            const importancePrompt = document.getElementById('importancePrompt').value;
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const importantEmails = document.getElementById('importantEmails');
+            const nonImportantEmails = document.getElementById('nonImportantEmails');
+
+            loading.classList.remove('hidden');
+            error.classList.add('hidden');
+            importantEmails.classList.add('hidden');
+            nonImportantEmails.classList.add('hidden');
+
+            try {
+                const response = await fetch(`${API_URL}/scan_emails`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ 
+                        max_results: maxResults,
+                        importance_prompt: importancePrompt,
+                        show_categories: showCategories
+                    }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.error || 'Failed to scan emails');
+                }
+
+                displayResults(data.important_emails, data.non_important_emails);
+            } catch (err) {
+                console.error('Error:', err);
+                error.textContent = err.message || 'An error occurred while scanning emails';
+                error.classList.remove('hidden');
+            } finally {
+                loading.classList.add('hidden');
+            }
+        }
+
+        function displayResults(importantEmails, nonImportantEmails) {
+            const importantSection = document.getElementById('importantEmails');
+            const nonImportantSection = document.getElementById('nonImportantEmails');
+            const importantList = document.getElementById('importantEmailsList');
+            const nonImportantList = document.getElementById('nonImportantEmailsList');
+
+            // Display important emails
+            if (importantEmails && importantEmails.length > 0) {
+                importantList.innerHTML = importantEmails.map(email => createEmailCard(email)).join('');
+                importantSection.classList.remove('hidden');
+            } else {
+                importantSection.classList.add('hidden');
+            }
+
+            // Display non-important emails
+            if (nonImportantEmails && nonImportantEmails.length > 0) {
+                nonImportantList.innerHTML = nonImportantEmails.map(email => createEmailCard(email)).join('');
+                nonImportantSection.classList.remove('hidden');
+            } else {
+                nonImportantSection.classList.add('hidden');
+            }
+        }
+
+        function createEmailCard(email) {
+            return `
+                <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow email-card">
+                    <div class="flex justify-between items-start mb-4">
+                        <h2 class="text-xl font-semibold text-gray-900">${escapeHtml(email.subject)}</h2>
+                        <span class="category-badge category-${escapeHtml(email.category)}" 
+                            style="display: ${showCategories ? 'inline-flex' : 'none'}">
+                            ${escapeHtml(email.category)}
+                        </span>
+                    </div>
+                    <div class="text-sm text-gray-600 mb-4">
+                        <p><strong>From:</strong> ${escapeHtml(email.from)}</p>
+                        <p><strong>Date:</strong> ${escapeHtml(email.date)}</p>
+                    </div>
+                    <div class="flex justify-end">
+                        <a href="${escapeHtml(email.gmail_link)}" target="_blank" rel="noopener noreferrer"
+                            class="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                            View in Gmail →
+                        </a>
+                    </div>
+                </div>
+            `;
+        }
+
+        function escapeHtml(unsafe) {
+            if (unsafe == null) return '';
+            return unsafe
+                .toString()
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        async function logout() {
+            try {
+                const response = await fetch('/logout');
+                if (response.ok) {
+                    window.location.href = '/login';
+                }
+            } catch (err) {
+                console.error('Error during logout:', err);
+            }
+        }
+    </script>
+</body>
+</html> 
