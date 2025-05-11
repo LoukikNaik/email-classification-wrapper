@@ -1,115 +1,150 @@
-# Gmail Email Classifier Agent
+# Gmail Email Classifier
 
-A Python-based agent that fetches emails from Gmail and classifies them using a local LLM (Ollama) with LangChain.
+A powerful email classification system that uses AI to automatically categorize and prioritize your Gmail inbox. This application helps you focus on what matters by intelligently identifying important emails and organizing them into meaningful categories.
 
-## Prerequisites
+## 🌟 Key Features
 
-1. Python 3.8 or higher
-2. Ollama installed and running locally
-3. Gmail account with API access enabled
-4. Make (for using Makefile commands)
+### 1. Smart Email Classification
+- **Importance Detection**: Automatically identifies important emails based on your custom criteria
+- **Category Organization**: Classifies emails into categories like Work, Personal, Finance, etc.
+- **Custom Criteria**: Define what makes an email important to you
+- **Real-time Processing**: Instant classification as emails arrive
 
-## Setup
+### 2. Multiple AI Providers
+- **Ollama Integration**: Use local AI models for privacy-focused processing
+- **Google Gemini Support**: Leverage Google's powerful AI for enhanced accuracy
+- **Easy Provider Switching**: Seamlessly switch between AI providers
 
-### Using Makefile (Recommended)
+### 3. Advanced Features
+- **Date Range Filtering**: Filter emails by specific date ranges
+- **Batch Processing**: Process multiple emails simultaneously
+- **Caching System**: Thread-safe caching for improved performance
+- **Multithreaded Processing**: Fast parallel email classification
 
-1. Create and activate virtual environment:
-```bash
-make setup
-source venv/bin/activate
-```
+### 4. User-Friendly Interface
+- **Modern React Frontend**: Clean and intuitive user interface
+- **Real-time Updates**: Instant feedback on classification results
+- **Responsive Design**: Works on desktop and mobile devices
+- **Easy Navigation**: Simple and efficient email management
 
-2. Install dependencies:
-```bash
-make install
-```
+## 🚀 Getting Started
 
-3. Pull the Ollama model:
-```bash
-make pull-model
-```
+### Prerequisites
+- Python 3.8 or higher
+- Node.js 14 or higher
+- Gmail account
+- (Optional) Ollama installed for local AI processing
+- (Optional) Google Gemini API key for cloud AI processing
 
-4. Set up Gmail API:
-   - Go to [Google Cloud Console](https://console.cloud.google.com)
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd gmail-classifier
+   ```
+
+2. **Set up Python environment**
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
+
+3. **Set up frontend**
+   ```bash
+   cd frontend
+   npm install
+   npm run build
+   cd ..
+   ```
+
+4. **Configure environment variables**
+   Create a `.env` file in the root directory:
+   ```
+   GMAIL_CREDENTIALS_FILE=path/to/credentials.json
+   OLLAMA_MODEL=phi  # or your preferred model
+   GEMINI_API_KEY=your_gemini_api_key  # if using Gemini
+   ```
+
+5. **Set up Gmail API**
+   - Go to Google Cloud Console
    - Create a new project
    - Enable Gmail API
    - Create OAuth 2.0 credentials
-   - Download the credentials and save as `credentials.json` in the project root
+   - Download credentials and save as specified in `.env`
 
-5. Check environment setup:
-```bash
-make check-env
-```
+### Running the Application
 
-### Manual Setup
+1. **Start the backend server**
+   ```bash
+   python app.py
+   ```
 
-1. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
+2. **Access the application**
+   Open your browser and navigate to `http://localhost:8080`
 
-2. Set up Gmail API:
-   - Go to [Google Cloud Console](https://console.cloud.google.com)
-   - Create a new project
-   - Enable Gmail API
-   - Create OAuth 2.0 credentials
-   - Download the credentials and save as `credentials.json` in the project root
+## 🔧 Configuration
 
-3. Install and run Ollama:
-   - Follow instructions at [Ollama's website](https://ollama.ai)
-   - Pull the model you want to use (e.g., `ollama pull llama2`)
+### AI Provider Selection
+- **Ollama**: Set `OLLAMA_MODEL` in `.env` to your preferred model
+- **Gemini**: Set `GEMINI_API_KEY` in `.env` to use Google's AI
 
-4. Create a `.env` file:
-```
-GMAIL_CREDENTIALS_FILE=credentials.json
-OLLAMA_MODEL=llama2
-```
+### Email Classification Settings
+- **Importance Criteria**: Define what makes an email important
+- **Categories**: Customize email categories
+- **Date Ranges**: Set default date ranges for filtering
 
-## Usage
+## 💡 Why This Matters
 
-### Using Makefile
+### Time Management
+- Reduce time spent sorting through emails
+- Focus on important messages first
+- Automate email organization
 
-Run the classifier:
-```bash
-make run
-```
+### Productivity
+- Never miss critical emails
+- Reduce email overwhelm
+- Better email prioritization
 
-Clean up generated files:
-```bash
-make clean
-```
+### Privacy
+- Option to process emails locally with Ollama
+- Secure Gmail API integration
+- No data storage beyond caching
 
-Show available commands:
-```bash
-make help
-```
+## 🔒 Security
 
-### Manual Usage
+- OAuth 2.0 authentication
+- Secure API key handling
+- Local caching with expiration
+- No permanent data storage
 
-Run the classifier:
-```bash
-python gmail_classifier.py
-```
+## 🛠️ Technical Details
 
-The script will:
-1. Authenticate with Gmail
-2. Fetch recent emails
-3. Classify them using the local LLM
-4. Output results to `classified_emails.json`
+### Architecture
+- **Backend**: Python Flask server
+- **Frontend**: React with modern UI components
+- **AI Integration**: LangChain for AI processing
+- **Caching**: Thread-safe file-based caching
 
-## Categories
+### Performance
+- Multithreaded email processing
+- Efficient caching system
+- Optimized AI model usage
+- Rate limiting and error handling
 
-Emails are classified into the following categories:
-- Work
-- Personal
-- Finance
-- Promotions
-- Travel
-- Spam
+## 🤝 Contributing
 
-## Security Notes
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-- All processing is done locally
-- Gmail access is read-only
-- Credentials are stored securely
-- No data is sent to external services 
+## 📝 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🙏 Acknowledgments
+
+- Google Gmail API
+- LangChain
+- Ollama
+- Google Gemini
+- React community 

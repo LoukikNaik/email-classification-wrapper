@@ -19,10 +19,13 @@ from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, timedelta
 from google import genai
 from pydantic import BaseModel, Field
 import hashlib
+import pickle
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import logging
 
 # Load environment variables
 load_dotenv()
@@ -102,6 +105,15 @@ Examples:
 - Subject: "Update Your Preferences"
   Body: "We'd love to hear from you. Take our quick survey!"
   → USELESS
+
+- Subject: "30+ new jobs for "intern"
+  Body: "Check out the latest opportunities for interns!"
+  → USELESS
+
+- Subject: "30+ new jobs for "intern"
+  Body: "Check out the latest opportunities for interns!"
+  → USELESS
+
 """
 
 class GeminiWrapper(Runnable):
@@ -190,6 +202,7 @@ class GmailClassifier:
         self.setup_classifiers()
         self.setup_output_dir()
         self.setup_cache()
+        self.cache_expiry = timedelta(hours=24)  # Cache expires after 24 hours
 
     def setup_output_dir(self):
         """Set up output directory for email logs."""
@@ -281,46 +294,89 @@ Just the single word: IMPORTANT or USELESS.
         self.cache_dir = "email_cache"
         if not os.path.exists(self.cache_dir):
             os.makedirs(self.cache_dir)
-        self.cache_file = os.path.join(self.cache_dir, "classified_emails.json")
-        self.load_cache()
 
-    def load_cache(self):
-        """Load the cache from file."""
-        if os.path.exists(self.cache_file):
-            try:
-                with open(self.cache_file, 'r') as f:
-                    self.cache = json.load(f)
-            except json.JSONDecodeError:
-                self.cache = {}
-        else:
-            self.cache = {}
+    def _get_cache_path(self, email_id: str) -> str:
+        """Get the cache file path for an email."""
+        return os.path.join(self.cache_dir, f"{email_id}.json")
 
-    def save_cache(self):
-        """Save the cache to file."""
-        with open(self.cache_file, 'w') as f:
-            json.dump(self.cache, f, indent=2)
+    def _is_cache_valid(self, cache_path: str) -> bool:
+        """Check if the cache is still valid."""
+        try:
+            if not os.path.exists(cache_path):
+                return False
+            
+            # Check if cache is expired
+            cache_time = datetime.fromtimestamp(os.path.getmtime(cache_path))
+            return datetime.now() - cache_time < self.cache_expiry
+        except Exception as e:
+            logging.error(f"Error checking cache validity: {str(e)}")
+            return False
 
-    def get_cache_key(self, email_id: str, importance_criteria: str = "", show_categories: bool = False) -> str:
-        """Generate a unique cache key for an email."""
-        # Include email ID, importance criteria, and show_categories in the cache key
-        key_data = f"{email_id}:{importance_criteria}:{show_categories}"
-        return hashlib.md5(key_data.encode()).hexdigest()
+    def _save_to_cache(self, email_id: str, classification_data: Dict):
+        """Save classification data to cache in a thread-safe manner."""
+        cache_path = self._get_cache_path(email_id)
+        temp_path = f"{cache_path}.tmp"
+        try:
+            # First write to a temporary file
+            with open(temp_path, 'w') as f:
+                json.dump(classification_data, f, indent=2)
+            # Then atomically rename the temp file to the final file
+            os.replace(temp_path, cache_path)
+            logging.info(f"Cached classification for email {email_id}")
+        except Exception as e:
+            logging.error(f"Error saving cache for email {email_id}: {str(e)}")
+            # Clean up temp file if it exists
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
 
-    def get_cached_classification(self, email_id: str, importance_criteria: str = "", show_categories: bool = False) -> Optional[Dict]:
-        """Get cached classification for an email if it exists."""
-        cache_key = self.get_cache_key(email_id, importance_criteria, show_categories)
-        return self.cache.get(cache_key)
+    def _load_from_cache(self, email_id: str) -> Optional[Dict]:
+        """Load classification data from cache if it exists and is valid."""
+        cache_path = self._get_cache_path(email_id)
+        if not self._is_cache_valid(cache_path):
+            return None
 
-    def cache_classification(self, email_id: str, classification: Dict, importance_criteria: str = "", show_categories: bool = False):
-        """Cache the classification for an email."""
-        cache_key = self.get_cache_key(email_id, importance_criteria, show_categories)
-        self.cache[cache_key] = classification
-        self.save_cache()
+        try:
+            # Use a file lock to prevent concurrent reads/writes
+            with open(cache_path, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            logging.error(f"Error loading cache for email {email_id}: {str(e)}")
+            return None
 
-    def get_emails(self, max_results: int = 10) -> List[Dict]:
-        """Fetch recent emails from Gmail."""
+    def get_emails(self, max_results: int = 10, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict]:
+        """Fetch emails from Gmail within a date range.
+        
+        Args:
+            max_results: Maximum number of emails to fetch
+            start_date: Start date in YYYY/MM/DD format (inclusive)
+            end_date: End date in YYYY/MM/DD format (inclusive)
+        """
+        # Build the query
+        query_parts = []
+        
+        if start_date:
+            # Convert YYYY/MM/DD to YYYY/MM/DD format for Gmail
+            start_date = start_date.replace('/', '/')
+            query_parts.append(f'after:{start_date}')
+        
+        if end_date:
+            # Convert YYYY/MM/DD to YYYY/MM/DD format for Gmail
+            end_date = end_date.replace('/', '/')
+            query_parts.append(f'before:{end_date}')
+        
+        # Combine query parts
+        query = ' '.join(query_parts) if query_parts else None
+        
+        # Fetch messages
         results = self.service.users().messages().list(
-            userId='me', maxResults=max_results).execute()
+            userId='me',
+            maxResults=max_results,
+            q=query
+        ).execute()
+        
         messages = results.get('messages', [])
         
         emails = []
@@ -366,40 +422,82 @@ Just the single word: IMPORTANT or USELESS.
 
     def normalize_category(self, category: str) -> str:
         """Normalize the category to ensure it's one of the valid categories."""
-        category = clean_text(category)
-        # If the response contains quotes, extract the category
-        if '"' in category:
-            category = category.split('"')[1]
-        # If the response is a sentence, try to find a matching category
-        for valid_cat in VALID_CATEGORIES:
-            if valid_cat.lower() in category.lower():
-                return valid_cat
-        # Default to "Personal" if no match found
-        return "Personal"
-
-    def classify_emails(self, emails: List[Dict], importance_criteria: str = "", show_categories: bool = False) -> List[Dict]:
-        """Classify emails using the selected LLM provider."""
-        classified_emails = []
-        
-        for email in emails:
-            # Check cache first
-            cached_classification = self.get_cached_classification(
-                email['id'], 
-                importance_criteria, 
-                show_categories
-            )
+        if not category:
+            return "Other"
             
-            if cached_classification:
-                print(f"Using cached classification for email: {email['subject']}")
-                classified_emails.append(cached_classification)
-                continue
+        category = clean_text(category)
+        # Remove any quotes or extra text
+        category = category.strip('"\'')
+        
+        # Try exact match first
+        if category in VALID_CATEGORIES:
+            return category
+            
+        # Try case-insensitive match
+        category_lower = category.lower()
+        for valid_cat in VALID_CATEGORIES:
+            if valid_cat.lower() == category_lower:
+                return valid_cat
+                
+        # Try partial match
+        for valid_cat in VALID_CATEGORIES:
+            if valid_cat.lower() in category_lower:
+                return valid_cat
+                
+        # Default to Other if no match found
+        logging.warning(f"Could not normalize category: {category}, defaulting to Other")
+        return "Other"
 
-            # Clean text before sending to LLM
-            clean_subject = clean_text(email['subject'])
-            clean_body = clean_text(email['body'][:500])  # Truncate and clean long bodies
+    def classify_emails(self, emails: List[Dict[str, Any]], importance_criteria: str = '', show_categories: bool = False) -> List[Dict[str, Any]]:
+        """Classify emails using the configured LLM provider."""
+        if not emails:
+            return []
+
+        # Process emails in parallel
+        with ThreadPoolExecutor(max_workers=min(10, len(emails))) as executor:
+            # Submit all email classification tasks
+            future_to_email = {
+                executor.submit(self._classify_single_email, email, importance_criteria, show_categories): email 
+                for email in emails
+            }
+            
+            # Collect results as they complete
+            classified_emails = []
+            for future in as_completed(future_to_email):
+                try:
+                    result = future.result()
+                    if result:
+                        # Ensure is_important is a boolean
+                        result['is_important'] = bool(result.get('is_important', False))
+                        classified_emails.append(result)
+                except Exception as e:
+                    logging.error(f"Error classifying email: {str(e)}")
+                    # Add the original email with error status
+                    email = future_to_email[future]
+                    email['error'] = str(e)
+                    email['is_important'] = False  # Default to not important on error
+                    classified_emails.append(email)
+            
+            return classified_emails
+
+    def _classify_single_email(self, email: Dict[str, Any], importance_criteria: str, show_categories: bool) -> Dict[str, Any]:
+        """Classify a single email using the configured LLM provider."""
+        try:
+            email_id = email.get('id')
+            if not email_id:
+                raise ValueError("Email ID is required for classification")
+
+            # Try to get from cache first
+            cached_data = self._load_from_cache(email_id)
+            if cached_data:
+                return cached_data
+
+            # Clean the email content
+            clean_subject = self.clean_text(email.get('subject', ''))
+            clean_body = self.clean_text(email.get('body', ''))
             
             # Get category if enabled
-            category = "Personal"  # Default category
+            category = "Other"  # Default category
             if show_categories:
                 try:
                     category_chain = self.category_prompt | self.model | StrOutputParser()
@@ -409,8 +507,8 @@ Just the single word: IMPORTANT or USELESS.
                     })
                     category = self.normalize_category(category)
                 except Exception as e:
-                    print(f"Error classifying category: {e}")
-                    category = "Personal"
+                    logging.error(f"Error classifying category: {e}")
+                    category = "Other"
             
             # Determine importance if criteria provided
             is_important = False
@@ -425,33 +523,33 @@ Just the single word: IMPORTANT or USELESS.
                     })
                     is_important = "IMPORTANT" in result.upper()
                 except Exception as e:
-                    print(f"Error parsing importance result: {e}")
+                    logging.error(f"Error parsing importance result: {e}")
                     is_important = False
-            
-            classified_email = {
-                'subject': clean_subject,
-                'category': category,
-                'date': clean_text(email['date']),
-                'from': clean_text(email['from']),
-                'id': email['id'],
-                'gmail_link': email['gmail_link'],
-                'is_important': is_important
-            }
-            
-            # Cache the classification
-            self.cache_classification(
-                email['id'],
-                classified_email,
-                importance_criteria,
-                show_categories
-            )
-            
-            # Save individual email to file
-            self.save_email_to_file(classified_email, clean_text(email['body']))
-            
-            classified_emails.append(classified_email)
-        
-        return classified_emails
+
+            # Add classification results to email
+            email['is_important'] = is_important
+            if show_categories:
+                email['category'] = category
+
+            # Save to cache
+            self._save_to_cache(email_id, email)
+            return email
+
+        except Exception as e:
+            logging.error(f"Error in _classify_single_email: {str(e)}")
+            email['error'] = str(e)
+            email['is_important'] = False
+            return email
+
+    def clean_text(self, text: str) -> str:
+        """Clean and normalize text content."""
+        if not text:
+            return ""
+        # Remove extra whitespace
+        text = ' '.join(text.split())
+        # Remove special characters but keep basic punctuation
+        text = ''.join(c for c in text if c.isprintable())
+        return text.strip()
 
     def save_email_to_file(self, email_info: Dict, body: str):
         """Save individual email to a file."""
@@ -480,6 +578,25 @@ Just the single word: IMPORTANT or USELESS.
         """Save classification results to a JSON file."""
         with open(filename, 'w') as f:
             json.dump(results, f, indent=2)
+
+    def clear_cache(self):
+        """Clear all cached classifications in a thread-safe manner."""
+        if not os.path.exists(self.cache_dir):
+            return
+
+        try:
+            # Get list of files first to avoid modification during iteration
+            cache_files = list(os.listdir(self.cache_dir))
+            for file in cache_files:
+                try:
+                    file_path = os.path.join(self.cache_dir, file)
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                except Exception as e:
+                    logging.error(f"Error removing cache file {file}: {str(e)}")
+            logging.info("Cache cleared successfully")
+        except Exception as e:
+            logging.error(f"Error clearing cache: {str(e)}")
 
 def main():
     classifier = GmailClassifier()

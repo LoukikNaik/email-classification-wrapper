@@ -7,3 +7,13 @@ classified_emails.json
 .venv/
 test_gemini.py
 /__pycache__/
+**/node_modules/**
+# frontend/node_modules/.bin/browserslist
+# **/node_modules/.bin/
+# **/node_modules/.cache/
+# **/node_modules/.config/
+# **/node_modules/.local/
+# **/node_modules/.npm/
+# **/node_modules/.yarn/
+# **/node_modules/.pnpm/
+# # frontend/node_modules/
