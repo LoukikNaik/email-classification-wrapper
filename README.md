@@ -2,6 +2,12 @@
 
 A powerful email classification system that uses AI to automatically categorize and prioritize your Gmail inbox. This application helps you focus on what matters by intelligently identifying important emails and organizing them into meaningful categories.
 
+## 🎥 Live Demo
+
+https://github.com/LoukikNaik/email-classifier-wrapper/assets/LoukikNaik/live_demo.mov
+
+*Watch the demo to see the application in action - from email scanning to real-time classification and filtering.*
+
 ## 🌟 Key Features
 
 ### 1. Smart Email Classification
